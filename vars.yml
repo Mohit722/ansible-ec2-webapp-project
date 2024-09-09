@@ -1,0 +1,10 @@
+
+---
+security_group: "sg-0a4b86efefd9999b7"  # Security group ID
+ami: "ami-0522ab6e1ddcc7055"  # AMI ID
+instance_type: "t2.micro"
+region: "ap-south-1"
+key_name: "devops"  # AWS key name
+repo_url: "https://github.com/Mohit722/blog-web-app.git"
+pem_file: "/etc/ansible/devops.pem"  # PEM file for SSH
+inventory_file: "/home/ubuntu/project2/hostfile"  # Absolute path for clarity

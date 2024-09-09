@@ -1,0 +1,143 @@
+- hosts: localhost
+  connection: local
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Create or terminate the EC2 instance depending on the state
+      amazon.aws.ec2_instance:
+        key_name: "{{ key_name }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami }}"
+        wait: yes
+        region: "{{ region }}"
+        security_groups:
+          - "{{ security_group }}"
+        tags:
+          Name: "My-Blog-Web-Server"
+        state: "{{ state }}"
+      register: ec2
+
+    - name: Debug EC2 instance creation output
+      debug:
+        var: ec2
+
+    - name: Wait for the instance to become reachable
+      wait_for:
+        host: "{{ ec2.instances[0].public_ip_address }}"
+        port: 22
+        state: started
+        delay: 60
+        timeout: 600
+      when: state == "present"
+
+    - name: Terminate EC2 instance when state is absent
+      amazon.aws.ec2_instance:
+        instance_id: "{{ ec2.instance_ids[0] }}"
+        region: "{{ region }}"
+        state: absent
+      when: state == "absent"
+
+    - name: Add the instance to the dynamic inventory file (only when present)
+      lineinfile:
+        path: "{{ inventory_file }}"
+        line: "{{ ec2.instances[0].public_ip_address }} ansible_ssh_user=ubuntu ansible_ssh_private_key_file=/etc/ansible/devops.pem"
+        create: yes
+        state: present
+      when: state == "present"
+
+    - name: Remove the instance from the dynamic inventory file (only when absent)
+      lineinfile:
+        path: "{{ inventory_file }}"
+        regexp: "{{ ec2.instances[0].public_ip_address }}.*"
+        state: absent
+      when: state == "absent"
+
+    - name: Save the public IP to a file (only when present)
+      copy:
+        content: "{{ ec2.instances[0].public_ip_address }}"
+        dest: "./public_ip.txt"
+      when: state == "present"
+
+# Add the new instance to the in-memory inventory and give it an alias
+    - name: Add the new EC2 instance to the in-memory inventory (only when present)
+      add_host:
+        name: "{{ ec2.instances[0].public_ip_address }}"
+        ansible_ssh_user: ubuntu
+        ansible_ssh_private_key_file: /etc/ansible/devops.pem
+        groups: ec2_group
+        ansible_host: "{{ ec2.instances[0].public_ip_address }}"
+      when: state == "present"
+
+
+# Play 2: Install Nginx, Git, and deploy the web application on the new EC2 instance
+
+- hosts: ec2_group  # Target the dynamic group created in Play 1
+  become: yes
+  tasks:
+    - name: Load public IP from file
+      set_fact:
+        public_ip: "{{ lookup('file', './public_ip.txt') }}"
+
+    - name: Check if we are targeting the correct hosts
+      debug:
+        msg: "This task runs on all hosts"
+
+    - name: Update the apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Install Git
+      apt:
+        name: git
+        state: present
+
+    - name: Clone GitHub Repository
+      git:
+        repo: 'https://github.com/Mohit722/blog-web-app.git'
+        dest: /tmp/your-blog
+        version: master
+
+    - name: Remove default Nginx page
+      file:
+        path: /var/www/html/index.nginx-debian.html
+        state: absent
+
+    - name: Copy files to Nginx directory
+      copy:
+        src: /tmp/your-blog/
+        dest: /var/www/html/
+        mode: '0755'
+        remote_src: yes
+
+    - name: Set permissions for web files
+      file:
+        path: /var/www/html/
+        owner: www-data
+        group: www-data
+        mode: '0755'
+        recurse: yes
+
+    - name: Remove the Git clone directory
+      file:
+        path: /tmp/your-blog
+        state: absent
+
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
+        enabled: yes
+
+- hosts: localhost
+  tasks:
+    - name: Display public IP (only when present)
+      debug:
+        msg: "Access the web application at http://{{ ec2.instances[0].public_ip_address }}"
+      when: state == "present"
