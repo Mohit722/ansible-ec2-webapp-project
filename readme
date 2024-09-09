@@ -90,9 +90,10 @@ Below is a README file with instructions for setting up the environment before e
 # 9. Verify boto3 and botocore installation:
      pip show boto3 botocore, which python3,  pip list | grep boto3
 
-# 10 after done with this playbook when you had done the execution and created the resources then you can exit from virtual environment to do:
-     deactivate
+Post-Execution Cleanup
+If you no longer need the EC2 resources and want to clean up the environment, follow these steps:
 
+# 10: deactivate
 # 11: rm -rf /home/ubuntu/myenv
 
 
